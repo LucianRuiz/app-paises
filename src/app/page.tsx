@@ -1,103 +1,204 @@
-import Image from "next/image";
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCountries } from '@/hooks/useCountries';
+import { SearchParamsWrapper } from '@/components/SearchParamsWrapper';
+import { CountryFiltersComponent } from '@/components/CountryFilters';
+import { CountryCard } from '@/components/CountryCard';
+import { CountryModal } from '@/components/CountryModal';
+import { Country, CountryFilters } from '@/types/country';
+import { Button } from '@/components/ui/button';
+import { Heart, Loader2, AlertCircle } from 'lucide-react';
+
+interface HomeContentProps {
+  urlFilters: {
+    search: string;
+    region: string;
+    minPopulation: number;
+    maxPopulation: number;
+  };
+}
+
+function HomeContent({ urlFilters }: HomeContentProps) {
+  const { countries, loading, error } = useCountries();
+  const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [filters, setFilters] = useState<CountryFilters>({
+    search: '',
+    region: '',
+    minPopulation: 0,
+    maxPopulation: 0,
+  });
+
+  const router = useRouter();
+
+  // Cargar filtros desde URL al inicializar
+  useEffect(() => {
+    setFilters(urlFilters);
+  }, [urlFilters]);
+
+  // Actualizar URL cuando cambien los filtros
+  useEffect(() => {
+    const params = new URLSearchParams();
+    
+    if (filters.search) params.set('search', filters.search);
+    if (filters.region) params.set('region', filters.region);
+    if (filters.minPopulation > 0) params.set('minPopulation', filters.minPopulation.toString());
+    if (filters.maxPopulation > 0) params.set('maxPopulation', filters.maxPopulation.toString());
+
+    const newUrl = params.toString() ? `?${params.toString()}` : '/';
+    router.replace(newUrl, { scroll: false });
+  }, [filters, router]);
+
+  // Obtener regiones únicas para el filtro
+  const regions = useMemo(() => {
+    const uniqueRegions = [...new Set(countries.map(country => country.region))];
+    return uniqueRegions.sort();
+  }, [countries]);
+
+  // Filtrar países
+  const filteredCountries = useMemo(() => {
+    return countries.filter(country => {
+      // Filtro de búsqueda
+      if (filters.search) {
+        const searchLower = filters.search.toLowerCase();
+        const nameMatch = country.name.common.toLowerCase().includes(searchLower) ||
+                         country.name.official.toLowerCase().includes(searchLower);
+        if (!nameMatch) return false;
+      }
+
+      // Filtro de región
+      if (filters.region && country.region !== filters.region) {
+        return false;
+      }
+
+      // Filtro de población mínima
+      if (filters.minPopulation > 0 && country.population < filters.minPopulation) {
+        return false;
+      }
+
+      // Filtro de población máxima
+      if (filters.maxPopulation > 0 && country.population > filters.maxPopulation) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [countries, filters]);
+
+  const handleCountryClick = (country: Country) => {
+    setSelectedCountry(country);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedCountry(null);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+          <p className="text-secondary-foreground">Cargando países...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="h-8 w-8 mx-auto mb-4 text-destructive" />
+          <p className="text-destructive mb-4">Error al cargar los países</p>
+          <p className="text-secondary-foreground text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="bg-card shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">Países del Mundo</h1>
+              <p className="text-secondary-foreground mt-1">
+                Explora información de {countries.length} países
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => router.push('/favorites')}
+              className="flex items-center gap-2"
+            >
+              <Heart className="h-4 w-4" />
+              Ver Favoritos
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      {/* Contenido principal */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Filtros */}
+        <CountryFiltersComponent
+          filters={filters}
+          onFiltersChange={setFilters}
+          regions={regions}
+        />
+
+        {/* Resultados */}
+        <div className="mb-4">
+          <p className="text-secondary-foreground">
+            Mostrando {filteredCountries.length} de {countries.length} países
+          </p>
+        </div>
+
+        {/* Grid de países */}
+        {filteredCountries.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filteredCountries.map((country) => (
+              <CountryCard
+                key={country.cca3}
+                country={country}
+                onCountryClick={handleCountryClick}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground text-lg">No se encontraron países con los filtros aplicados</p>
+            <Button
+              variant="outline"
+              onClick={() => setFilters({ search: '', region: '', minPopulation: 0, maxPopulation: 0 })}
+              className="mt-4"
+            >
+              Limpiar filtros
+            </Button>
+          </div>
+        )}
+      </main>
+
+      {/* Modal de detalles */}
+      <CountryModal
+        country={selectedCountry}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+      />
+    </div>
+  );
+}
 
 export default function Home() {
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+    <SearchParamsWrapper>
+      {(urlFilters) => <HomeContent urlFilters={urlFilters} />}
+    </SearchParamsWrapper>
   );
 }
